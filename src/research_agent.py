@@ -5,27 +5,48 @@ This module implements a research agent that can perform iterative web searches
 and synthesis to answer complex research questions.
 """
 
+import os
 from typing_extensions import Literal
 
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, filter_messages
-from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 
 from deep_research.state_research import ResearcherState, ResearcherOutputState
 from deep_research.utils import tavily_search, get_today_str, think_tool
 from deep_research.prompts import research_agent_prompt, compress_research_system_prompt, compress_research_human_message
+from deep_research.request_logger import log_openrouter_request, log_openrouter_response, log_openrouter_error, log_agent_iteration
 
 # ===== CONFIGURATION =====
+
+# OpenRouter model configuration
+MODEL_ID = "xiaomi/mimo-v2-flash:free"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Set up tools and model binding
 tools = [tavily_search, think_tool]
 tools_by_name = {tool.name: tool for tool in tools}
 
 # Initialize models
-model = init_chat_model(model="openai:gpt-5")
+model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
 model_with_tools = model.bind_tools(tools)
-summarization_model = init_chat_model(model="openai:gpt-5")
-compress_model = init_chat_model(model="openai:gpt-5", max_tokens=32000) # model="anthropic:claude-sonnet-4-20250514", max_tokens=64000
+
+summarization_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
+compress_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    max_tokens=32000
+)
 
 # ===== AGENT NODES =====
 
@@ -38,13 +59,35 @@ def llm_call(state: ResearcherState):
 
     Returns updated state with the model's response.
     """
-    return {
-        "researcher_messages": [
-            model_with_tools.invoke(
-                [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"]
-            )
-        ]
-    }
+    messages = [SystemMessage(content=research_agent_prompt)] + state["researcher_messages"]
+    
+    # Log request
+    log_openrouter_request(
+        model=MODEL_ID,
+        messages=[{"role": "user", "content": str(m.content)[:100]} for m in messages],
+        request_type="research"
+    )
+    
+    try:
+        response = model_with_tools.invoke(messages)
+        
+        # Log response
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        log_openrouter_response(
+            model=MODEL_ID,
+            response_content=response_text,
+            request_type="research"
+        )
+        
+        # Log iteration
+        tool_calls = response.tool_calls if hasattr(response, 'tool_calls') and response.tool_calls else []
+        action = f"called {len(tool_calls)} tools" if tool_calls else "provided answer"
+        log_agent_iteration("researcher", len(state.get("researcher_messages", [])), action)
+        
+        return {"researcher_messages": [response]}
+    except Exception as e:
+        log_openrouter_error(MODEL_ID, "research", str(e))
+        raise
 
 def tool_node(state: ResearcherState):
     """Execute all tool calls from the previous LLM response.
@@ -80,20 +123,40 @@ def compress_research(state: ResearcherState) -> dict:
 
     system_message = compress_research_system_prompt.format(date=get_today_str())
     messages = [SystemMessage(content=system_message)] + state.get("researcher_messages", []) + [HumanMessage(content=compress_research_human_message)]
-    response = compress_model.invoke(messages)
-
-    # Extract raw notes from tool and AI messages
-    raw_notes = [
-        str(m.content) for m in filter_messages(
-            state["researcher_messages"], 
-            include_types=["tool", "ai"]
+    
+    # Log compression request
+    log_openrouter_request(
+        model=MODEL_ID,
+        messages=[{"role": "user", "content": compress_research_human_message[:100]}],
+        max_tokens=32000,
+        request_type="compression"
+    )
+    
+    try:
+        response = compress_model.invoke(messages)
+        
+        # Log response
+        log_openrouter_response(
+            model=MODEL_ID,
+            response_content=str(response.content),
+            request_type="compression"
         )
-    ]
 
-    return {
-        "compressed_research": str(response.content),
-        "raw_notes": ["\n".join(raw_notes)]
-    }
+        # Extract raw notes from tool and AI messages
+        raw_notes = [
+            str(m.content) for m in filter_messages(
+                state["researcher_messages"], 
+                include_types=["tool", "ai"]
+            )
+        ]
+
+        return {
+            "compressed_research": str(response.content),
+            "raw_notes": ["\n".join(raw_notes)]
+        }
+    except Exception as e:
+        log_openrouter_error(MODEL_ID, "compression", str(e))
+        raise
 
 # ===== ROUTING LOGIC =====
 

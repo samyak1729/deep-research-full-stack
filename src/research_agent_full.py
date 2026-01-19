@@ -12,6 +12,7 @@ The system orchestrates the complete research workflow from initial user
 input through final report delivery.
 """
 
+import os
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 
@@ -23,8 +24,17 @@ from deep_research.multi_agent_supervisor import supervisor_agent
 
 # ===== Config =====
 
-from langchain.chat_models import init_chat_model
-writer_model = init_chat_model(model="openai:gpt-5", max_tokens=40000) # model="anthropic:claude-sonnet-4-20250514", max_tokens=64000
+from langchain_openai import ChatOpenAI
+
+# OpenRouter model configuration
+MODEL_ID = "xiaomi/mimo-v2-flash:free"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+writer_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    max_tokens=40000
+)
 
 # ===== FINAL REPORT GENERATION =====
 

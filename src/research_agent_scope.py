@@ -9,10 +9,11 @@ The workflow uses structured output to make deterministic decisions about
 whether sufficient context exists to proceed with research.
 """
 
+import os
 from datetime import datetime
 from typing_extensions import Literal
 
-from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, get_buffer_string
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
@@ -28,9 +29,22 @@ def get_today_str() -> str:
 
 # ===== CONFIGURATION =====
 
+# OpenRouter model configuration
+MODEL_ID = "xiaomi/mimo-v2-flash:free"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
 # Initialize model
-model = init_chat_model(model="openai:gpt-5")
-creative_model = init_chat_model(model="openai:gpt-5")
+model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
+creative_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
 
 # ===== WORKFLOW NODES =====
 

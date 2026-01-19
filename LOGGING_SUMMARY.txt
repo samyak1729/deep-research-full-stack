@@ -1,0 +1,246 @@
+================================================================================
+API REQUEST LOGGING SYSTEM - IMPLEMENTATION COMPLETE
+================================================================================
+
+PROBLEM SOLVED:
+You wanted to see what requests your agent was making (you saw ~10 OpenRouter
+requests but couldn't see what they were).
+
+SOLUTION PROVIDED:
+A complete logging system that tracks ALL API calls to Tavily and OpenRouter,
+showing you exactly what was requested and what responses came back.
+
+================================================================================
+HOW TO USE (5 SECONDS)
+================================================================================
+
+After running a research task:
+
+  python3 check_api_logs.py
+
+That's it! You'll see:
+  - Number of Tavily searches made
+  - Number of OpenRouter LLM calls
+  - Breakdown of call types (research, summarization, compression, etc.)
+  - Any errors
+  - Total iteration count
+
+================================================================================
+EXAMPLE OUTPUT
+================================================================================
+
+  ==================================================
+  API Request Summary
+  ==================================================
+  Tavily Requests:      5
+  Tavily Responses:     5
+  OpenRouter Requests:  10        <-- This is your 10 requests!
+  OpenRouter Responses: 10
+  Errors:               0
+  Agent Iterations:     15
+  ==================================================
+
+================================================================================
+SEE WHAT THOSE 10 REQUESTS WERE
+================================================================================
+
+  python3 check_api_logs.py --tail 50 | grep "OPENROUTER.*REQUEST"
+
+You'll see each request with:
+  - Request type (research, summarization, compression, etc.)
+  - The model being called
+  - First words of the prompt
+  - Token limits
+
+Example:
+  [OPENROUTER] REQUEST | type=research | ... | first_msg='What are recent advances...'
+  [OPENROUTER] REQUEST | type=summarization | ... | first_msg='Summarize this article...'
+  [OPENROUTER] REQUEST | type=research | ... | first_msg='Now I found that...'
+  ... (10 total)
+
+================================================================================
+DETECT IF AGENT IS LOOPING
+================================================================================
+
+  python3 check_api_logs.py --summary
+
+Shows:
+  - Breakdown of requests by type
+  - All errors (if any)
+  - Total iteration count
+
+If iterations keep going up (15, 16, 17... past your max), agent is looping.
+
+Or check programmatically:
+
+  from src.logging_utils import detect_loop
+  if detect_loop(threshold=10):
+      print("Agent exceeded 10 iterations - potential loop!")
+
+================================================================================
+ALL COMMANDS
+================================================================================
+
+  python3 check_api_logs.py              # Summary view
+  python3 check_api_logs.py --tail 50    # Last 50 log lines
+  python3 check_api_logs.py --grep ERROR # Find errors
+  python3 check_api_logs.py --summary    # Detailed analysis
+
+================================================================================
+FILES CREATED
+================================================================================
+
+src/request_logger.py         - Core logging module
+src/logging_utils.py          - Python/Jupyter utilities
+check_api_logs.py             - CLI tool for checking logs
+API_LOGGING.md                - Full documentation
+LOGGING_EXAMPLES.md           - Practical usage scenarios
+QUICK_START_LOGGING.md        - 5-minute quick start
+LOGGING_IMPLEMENTATION.md     - Technical implementation details
+.gitignore                    - Excludes logs/ from git
+logs/api_requests.log         - Where all logs are stored (auto-created)
+
+================================================================================
+FILES MODIFIED
+================================================================================
+
+src/utils.py                  - Logs Tavily and OpenRouter calls
+src/research_agent.py         - Logs research iterations
+src/multi_agent_supervisor.py - Logs supervisor iterations
+app/backend/main.py           - Prints summary after research
+
+All changes are additive (non-breaking). No existing functionality changed.
+
+================================================================================
+WHAT GETS LOGGED
+================================================================================
+
+Tavily Searches:
+  - Search query
+  - Parameters (max_results, topic)
+  - Number of results returned
+  - Title of first result
+
+OpenRouter LLM Calls:
+  - Request type (research, summarization, compression, etc.)
+  - Model being used
+  - Number of messages in conversation
+  - Token limits
+  - First 100 characters of response
+
+Agent Progress:
+  - Which agent (researcher/supervisor)
+  - Iteration number
+  - What action was taken (tool calls, etc.)
+
+Errors:
+  - Which API failed
+  - Error message
+  - Request context
+
+================================================================================
+REAL-TIME MONITORING
+================================================================================
+
+While running research in one terminal:
+
+  # Terminal 1: Run the backend
+  python app/backend/main.py
+
+  # Terminal 2: Watch logs (updates every 2 seconds)
+  watch -n 2 "python3 check_api_logs.py --tail 10"
+
+Or continuous tail:
+  tail -f logs/api_requests.log
+
+================================================================================
+IN PYTHON/JUPYTER
+================================================================================
+
+Quick summary:
+  from src.logging_utils import print_summary
+  print_summary()
+
+See last 20 entries:
+  from src.logging_utils import print_last_n
+  print_last_n(20)
+
+Check for loops:
+  from src.logging_utils import detect_loop
+  if detect_loop():
+      print("Potential loop detected!")
+
+Pretty HTML in Jupyter:
+  from src.logging_utils import jupyter_display_summary
+  jupyter_display_summary()
+
+================================================================================
+KEY CAPABILITIES
+================================================================================
+
+✓ See exactly what queries your agent searches for
+✓ See exactly what LLM prompts it sends
+✓ See first words of all responses
+✓ Count total API calls by type
+✓ Detect loops automatically
+✓ Find errors with one command
+✓ Monitor in real-time
+✓ Export logs for analysis
+✓ Works offline (no new API calls)
+✓ Zero performance impact
+
+================================================================================
+ANSWERING YOUR ORIGINAL QUESTION
+================================================================================
+
+Q: "Our agent sent 10 requests to OpenRouter but I wasn't sure what they were.
+   Also wasn't sure if agent went into a loop"
+
+A: Now you can see:
+   1. Exactly what those 10 requests were
+   2. What type each was (research, summarization, etc.)
+   3. First words of each prompt
+   4. How many iterations it took
+   5. If it hit a loop limit
+
+   Just run:
+     python3 check_api_logs.py --tail 50 | grep OPENROUTER
+
+================================================================================
+DOCUMENTATION
+================================================================================
+
+Start with:
+  QUICK_START_LOGGING.md       - Get started in 5 minutes
+  
+Then read:
+  LOGGING_EXAMPLES.md           - See practical examples
+  API_LOGGING.md                - Complete reference
+
+For technical details:
+  LOGGING_IMPLEMENTATION.md     - Implementation overview
+  src/request_logger.py         - Read the code
+  src/logging_utils.py          - Read the code
+
+================================================================================
+CLEARING LOGS BETWEEN RUNS
+================================================================================
+
+  rm logs/api_requests.log
+
+Next time you run research, a fresh log file will be created.
+
+================================================================================
+SUMMARY
+================================================================================
+
+You now have complete visibility into what your agent is doing at the API level.
+
+Next step: Run a research task and then:
+
+  python3 check_api_logs.py
+
+That's it! 🎯
+
+For more details, see QUICK_START_LOGGING.md
+================================================================================

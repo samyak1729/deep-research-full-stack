@@ -11,10 +11,11 @@ maintaining isolated context windows for each research topic.
 """
 
 import asyncio
+import os
 
 from typing_extensions import Literal
 
-from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import (
     HumanMessage, 
     BaseMessage, 
@@ -33,6 +34,7 @@ from deep_research.state_multi_agent_supervisor import (
     ResearchComplete
 )
 from deep_research.utils import get_today_str, think_tool, refine_draft_report
+from deep_research.request_logger import log_openrouter_request, log_openrouter_response, log_openrouter_error, log_agent_iteration
 
 def get_notes_from_tool_calls(messages: list[BaseMessage]) -> list[str]:
     """Extract research notes from ToolMessage objects in supervisor message history.
@@ -67,8 +69,16 @@ except ImportError:
 
 # ===== CONFIGURATION =====
 
+# OpenRouter model configuration
+MODEL_ID = "xiaomi/mimo-v2-flash:free"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
 supervisor_tools = [ConductResearch, ResearchComplete, think_tool,refine_draft_report]
-supervisor_model = init_chat_model(model="openai:gpt-5")
+supervisor_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
 supervisor_model_with_tools = supervisor_model.bind_tools(supervisor_tools)
 
 # System constants
@@ -97,6 +107,7 @@ async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tool
         Command to proceed to supervisor_tools node with updated state
     """
     supervisor_messages = state.get("supervisor_messages", [])
+    research_iterations = state.get("research_iterations", 0)
 
     # Prepare system message with current date and constraints
 
@@ -107,16 +118,40 @@ async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tool
     )
     messages = [SystemMessage(content=system_message)] + supervisor_messages
 
-    # Make decision about next research steps
-    response = await supervisor_model_with_tools.ainvoke(messages)
-
-    return Command(
-        goto="supervisor_tools",
-        update={
-            "supervisor_messages": [response],
-            "research_iterations": state.get("research_iterations", 0) + 1
-        }
+    # Log supervisor request
+    log_openrouter_request(
+        model=MODEL_ID,
+        messages=[{"role": "user", "content": str(m.content)[:100]} for m in messages],
+        request_type="supervisor"
     )
+
+    try:
+        # Make decision about next research steps
+        response = await supervisor_model_with_tools.ainvoke(messages)
+
+        # Log response
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        log_openrouter_response(
+            model=MODEL_ID,
+            response_content=response_text,
+            request_type="supervisor"
+        )
+        
+        # Log iteration
+        tool_calls = response.tool_calls if hasattr(response, 'tool_calls') and response.tool_calls else []
+        action = f"called {len(tool_calls)} tools" if tool_calls else "no action"
+        log_agent_iteration("supervisor", research_iterations, action)
+
+        return Command(
+            goto="supervisor_tools",
+            update={
+                "supervisor_messages": [response],
+                "research_iterations": research_iterations + 1
+            }
+        )
+    except Exception as e:
+        log_openrouter_error(MODEL_ID, "supervisor", str(e))
+        raise
 
 async def supervisor_tools(state: SupervisorState) -> Command[Literal["supervisor", "__end__"]]:
     """Execute supervisor decisions - either conduct research or end the process.
@@ -250,7 +285,9 @@ async def supervisor_tools(state: SupervisorState) -> Command[Literal["superviso
             goto=next_step,
             update={
                 "notes": get_notes_from_tool_calls(supervisor_messages),
-                "research_brief": state.get("research_brief", "")
+                "research_brief": state.get("research_brief", ""),
+                "raw_notes": all_raw_notes,
+                "draft_report": draft_report if draft_report else state.get("draft_report", "")
             }
         )
     elif len(refine_report_calls) > 0:

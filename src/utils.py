@@ -6,17 +6,22 @@ This module provides search and content processing utilities for the research ag
 including web search capabilities and content summarization tools.
 """
 
+import os
 from pathlib import Path
 from datetime import datetime
 from typing_extensions import Annotated, List, Literal
 
-from langchain.chat_models import init_chat_model 
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool, InjectedToolArg
 from tavily import TavilyClient
 
 from deep_research.state_research import Summary
 from deep_research.prompts import summarize_webpage_prompt, report_generation_with_draft_insight_prompt
+from deep_research.request_logger import (
+    log_tavily_request, log_tavily_response, log_tavily_error,
+    log_openrouter_request, log_openrouter_response, log_openrouter_error
+)
 
 # ===== UTILITY FUNCTIONS =====
 
@@ -39,8 +44,27 @@ def get_current_dir() -> Path:
 
 # ===== CONFIGURATION =====
 
-summarization_model = init_chat_model(model="openai:gpt-5")
-writer_model = init_chat_model(model="openai:gpt-5", max_tokens=32000)
+# Verify OpenRouter API key is set
+if not os.getenv("OPENROUTER_API_KEY"):
+    raise ValueError("OPENROUTER_API_KEY environment variable is not set. Please set it before running.")
+
+# OpenRouter model configuration
+MODEL_ID = "xiaomi/mimo-v2-flash:free"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+summarization_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
+writer_model = ChatOpenAI(
+    model=MODEL_ID,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    max_tokens=32000
+)
+
 tavily_client = TavilyClient()
 MAX_CONTEXT_LENGTH = 250000
 
@@ -67,13 +91,22 @@ def tavily_search_multiple(
     # Execute searches sequentially. Note: yon can use AsyncTavilyClient to parallelize this step.
     search_docs = []
     for query in search_queries:
-        result = tavily_client.search(
-            query,
-            max_results=max_results,
-            include_raw_content=include_raw_content,
-            topic=topic
-        )
-        search_docs.append(result)
+        try:
+            log_tavily_request(query, max_results, topic)
+            result = tavily_client.search(
+                query,
+                max_results=max_results,
+                include_raw_content=include_raw_content,
+                topic=topic
+            )
+            # Log response with result count
+            num_results = len(result.get('results', []))
+            first_result = result.get('results', [{}])[0] if result.get('results') else None
+            log_tavily_response(query, num_results, first_result)
+            search_docs.append(result)
+        except Exception as e:
+            log_tavily_error(query, str(e))
+            raise
 
     return search_docs
 
@@ -90,6 +123,19 @@ def summarize_webpage_content(webpage_content: str) -> str:
         # Set up structured output model for summarization
         structured_model = summarization_model.with_structured_output(Summary)
 
+        # Log request
+        log_openrouter_request(
+            model=MODEL_ID,
+            messages=[{
+                "role": "user",
+                "content": summarize_webpage_prompt.format(
+                    webpage_content=webpage_content[:100],  # Log first 100 chars
+                    date=get_today_str()
+                )
+            }],
+            request_type="summarization"
+        )
+
         # Generate summary
         summary = structured_model.invoke([
             HumanMessage(content=summarize_webpage_prompt.format(
@@ -97,6 +143,14 @@ def summarize_webpage_content(webpage_content: str) -> str:
                 date=get_today_str()
             ))
         ])
+
+        # Log response
+        response_text = f"{summary.summary}\n{summary.key_excerpts}"
+        log_openrouter_response(
+            model=MODEL_ID,
+            response_content=response_text,
+            request_type="summarization"
+        )
 
         # Format summary with clear structure
         formatted_summary = (
@@ -107,6 +161,7 @@ def summarize_webpage_content(webpage_content: str) -> str:
         return formatted_summary
 
     except Exception as e:
+        log_openrouter_error(MODEL_ID, "summarization", str(e))
         print(f"Failed to summarize webpage: {str(e)}")
         return webpage_content[:1000] + "..." if len(webpage_content) > 1000 else webpage_content
 
@@ -263,6 +318,28 @@ def refine_draft_report(research_brief: Annotated[str, InjectedToolArg],
         date=get_today_str()
     )
 
-    draft_report = writer_model.invoke([HumanMessage(content=draft_report_prompt)])
+    try:
+        # Log request
+        log_openrouter_request(
+            model=MODEL_ID,
+            messages=[{
+                "role": "user",
+                "content": draft_report_prompt[:150]
+            }],
+            max_tokens=32000,
+            request_type="refinement"
+        )
 
-    return draft_report.content
+        result = writer_model.invoke([HumanMessage(content=draft_report_prompt)])
+
+        # Log response
+        log_openrouter_response(
+            model=MODEL_ID,
+            response_content=result.content,
+            request_type="refinement"
+        )
+
+        return result.content
+    except Exception as e:
+        log_openrouter_error(MODEL_ID, "refinement", str(e))
+        raise
