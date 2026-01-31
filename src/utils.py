@@ -49,7 +49,7 @@ if not os.getenv("OPENROUTER_API_KEY"):
     raise ValueError("OPENROUTER_API_KEY environment variable is not set. Please set it before running.")
 
 # OpenRouter model configuration
-MODEL_ID = "xiaomi/mimo-v2-flash:free"
+MODEL_ID = "arcee-ai/trinity-large-preview:free"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 summarization_model = ChatOpenAI(

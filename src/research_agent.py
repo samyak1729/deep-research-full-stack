@@ -20,7 +20,7 @@ from deep_research.request_logger import log_openrouter_request, log_openrouter_
 # ===== CONFIGURATION =====
 
 # OpenRouter model configuration
-MODEL_ID = "xiaomi/mimo-v2-flash:free"
+MODEL_ID = "arcee-ai/trinity-large-preview:free"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Set up tools and model binding
@@ -101,7 +101,8 @@ def tool_node(state: ResearcherState):
     observations = []
     for tool_call in tool_calls:
         tool = tools_by_name[tool_call["name"]]
-        observations.append(tool.invoke(tool_call["args"]))
+        observation = tool.invoke(tool_call["args"])
+        observations.append(observation)
 
     # Create tool message outputs
     tool_outputs = [

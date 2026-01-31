@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-deepresearch}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-deepresearch}
+      POSTGRES_DB: ${DB_NAME:-deepresearch}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-deepresearch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - deep-research
+    container_name: deep-research-postgres
+
   backend:
     build:
       context: .
@@ -11,10 +30,15 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - DATABASE_URL=postgresql://${DB_USER:-deepresearch}:${DB_PASSWORD:-deepresearch}@postgres:5432/${DB_NAME:-deepresearch}
       - PYTHONUNBUFFERED=1
+      - SQL_ECHO=${SQL_ECHO:-false}
     volumes:
       - ./src:/app/src
       - ./app/backend:/app/app/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -55,3 +79,7 @@ services:
 networks:
   deep-research:
     driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

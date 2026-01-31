@@ -30,7 +30,7 @@ def get_today_str() -> str:
 # ===== CONFIGURATION =====
 
 # OpenRouter model configuration
-MODEL_ID = "xiaomi/mimo-v2-flash:free"
+MODEL_ID = "arcee-ai/trinity-large-preview:free"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Initialize model

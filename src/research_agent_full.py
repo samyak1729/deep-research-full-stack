@@ -27,7 +27,7 @@ from deep_research.multi_agent_supervisor import supervisor_agent
 from langchain_openai import ChatOpenAI
 
 # OpenRouter model configuration
-MODEL_ID = "xiaomi/mimo-v2-flash:free"
+MODEL_ID = "arcee-ai/trinity-large-preview:free"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 writer_model = ChatOpenAI(
     model=MODEL_ID,

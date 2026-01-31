@@ -70,7 +70,7 @@ except ImportError:
 # ===== CONFIGURATION =====
 
 # OpenRouter model configuration
-MODEL_ID = "xiaomi/mimo-v2-flash:free"
+MODEL_ID = "arcee-ai/trinity-large-preview:free"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 supervisor_tools = [ConductResearch, ResearchComplete, think_tool,refine_draft_report]
